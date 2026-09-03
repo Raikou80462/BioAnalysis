@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iPhone Video Recorder PWA</title>
+  <!-- PWA化のための設定 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    body { font-family: -apple-system, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 20px; }
+    video { width: 100%; max-width: 400px; border-radius: 12px; background: #000; margin-bottom: 15px; }
+    button { font-size: 16px; font-weight: bold; padding: 12px 24px; border: none; border-radius: 25px; margin: 5px; cursor: pointer; }
+    .btn-record { background: #ff3b30; color: white; }
+    .btn-stop { background: #555; color: white; }
+    .btn-save { background: #34c759; color: white; }
+  </style>
+</head>
+<body>
+
+  <h2>🎥 iPhone 動画撮影 PWA</h2>
+  
+  <!-- プレビュー・再生画面 -->
+  <video id="preview" autoplay playsinline muted></video>
+
+  <div>
+    <button id="startBtn" class="btn-record">録画開始</button>
+    <button id="stopBtn" class="btn-stop" disabled>停止</button>
+    <a id="downloadLink" style="display:none;"><button class="btn-save">動画を保存</button></a>
+  </div>
+
+  <script>
+    let mediaRecorder;
+    let recordedChunks = [];
+    const preview = document.getElementById('preview');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadLink = document.getElementById('downloadLink');
+
+    // カメラの起動（iPhoneの外カメラを取得）
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }, // 外カメラ指定
+          audio: true
+        });
+        preview.srcObject = stream;
+
+        // MediaRecorderの初期化 (iOS対応形式)
+        const options = { mimeType: 'video/mp4' };
+        mediaRecorder = new MediaRecorder(stream, options);
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) recordedChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+          const url = URL.createObjectURL(blob);
+          
+          // 撮影した動画をプレビュー表示
+          preview.srcObject = null;
+          preview.src = url;
+          preview.controls = true;
+
+          // 保存用リンクの設定
+          downloadLink.href = url;
+          downloadLink.download = `video_${Date.now()}.mp4`;
+          downloadLink.style.display = 'inline-block';
+        };
+
+      } catch (err) {
+        alert('カメラへのアクセスエラー: ' + err.message);
+      }
+    }
+
+    startBtn.onclick = () => {
+      recordedChunks = [];
+      mediaRecorder.start();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      downloadLink.style.display = 'none';
+    };
+
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
+
+    initCamera();
+  </script>
+</body>
+</html>
