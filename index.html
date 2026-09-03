@@ -4,18 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>生き物判別 PWA</title>
-  <!-- PWA化のための設定 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 16px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      background: #121212;
+      color: #fff;
+      margin: 0;
+      padding: 16px;
+    }
     h2 { font-size: 1.2rem; margin-bottom: 12px; }
+
+    /* 縦画面用スタイル */
     .camera-container { position: relative; width: 100%; max-width: 400px; margin: 0 auto 12px; }
     video, canvas { width: 100%; border-radius: 12px; background: #000; aspect-ratio: 3/4; object-fit: cover; }
-    
     .btn-group { margin-bottom: 16px; }
-    
+
     /* ボタン共通スタイル */
     button {
       font-size: 15px;
@@ -28,27 +35,18 @@
       transition: transform 0.1s, filter 0.1s;
       -webkit-tap-highlight-color: transparent;
     }
-
     .btn-record { background: #ff3b30; color: white; }
     .btn-stop { background: #ff9500; color: white; }
-
-    /* 押している最中（:active）の色の変化と凹み効果 */
-    button:active:not(:disabled),
-    .search-btn:active {
+    button:active:not(:disabled), .search-btn:active {
       transform: scale(0.94);
       filter: brightness(0.75);
     }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* 無効化（disabled）時の見た目 */
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    
     /* APIキー設定 */
     .api-key-box { max-width: 400px; margin: 0 auto 16px; background: #1c1c1e; padding: 10px; border-radius: 8px; font-size: 12px; }
     .api-key-box input { width: 70%; padding: 6px; border-radius: 4px; border: 1px solid #444; background: #2c2c2e; color: #fff; }
-    
+
     /* ローディング表示 */
     #loading { display: none; margin: 20px 0; }
     .spinner { width: 36px; height: 36px; border: 4px solid rgba(255,255,255,0.1); border-top-color: #34c759; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 10px; }
@@ -71,39 +69,55 @@
       transition: transform 0.1s, filter 0.1s;
       -webkit-tap-highlight-color: transparent;
     }
+
+    /* iPhone横向き用レイアウト */
+    @media (orientation: landscape) {
+      body {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 10px;
+      }
+      h2 { width: 100%; margin-bottom: 4px; font-size: 1rem; }
+      .camera-container { width: 45vw; max-width: none; margin: 0; }
+      video, canvas { aspect-ratio: 4/3; height: auto; }
+      .right-panel { width: 45vw; display: flex; flex-direction: column; align-items: center; }
+      .api-key-box, .btn-group, #result-section { width: 100%; max-width: none; margin-bottom: 10px; }
+      #loading { width: 100%; }
+    }
   </style>
 </head>
 <body ontouchstart="">
 
   <h2>🌿 生き物（動物・昆虫・植物）判別</h2>
 
-  <!-- APIキー設定エリア -->
-  <div class="api-key-box">
-    <label>Gemini API Key: </label>
-    <input type="password" id="apiKeyInput" placeholder="AI Studioのキーを入力">
-  </div>
-
-  <!-- プレビュー画面 -->
   <div class="camera-container">
     <video id="preview" autoplay playsinline muted></video>
     <canvas id="captureCanvas" style="display:none;"></canvas>
   </div>
 
-  <div class="btn-group">
-    <button id="startBtn" class="btn-record">録画開始</button>
-    <button id="stopBtn" class="btn-stop" disabled>停止＆判別</button>
-  </div>
+  <div class="right-panel">
+    <div class="api-key-box">
+      <label>Gemini API Key: </label>
+      <input type="password" id="apiKeyInput" placeholder="AI Studioのキーを入力">
+    </div>
 
-  <!-- 読み込み表示 -->
-  <div id="loading">
-    <div class="spinner"></div>
-    <div>AIが生物を解析中...</div>
-  </div>
+    <div class="btn-group">
+      <button id="startBtn" class="btn-record">録画開始</button>
+      <button id="stopBtn" class="btn-stop" disabled>停止＆判別</button>
+    </div>
 
-  <!-- 結果表示セクション -->
-  <div id="result-section">
-    <h3 style="font-size: 1rem; margin-bottom: 8px;">🔍 判別結果候補</h3>
-    <div id="candidates-container"></div>
+    <div id="loading">
+      <div class="spinner"></div>
+      <div>AIが生物を解析中...</div>
+    </div>
+
+    <div id="result-section">
+      <h3 style="font-size: 1rem; margin-bottom: 8px;">🔍 判別結果候補</h3>
+      <div id="candidates-container"></div>
+    </div>
   </div>
 
   <script>
@@ -128,6 +142,10 @@
     // カメラの起動（iPhoneの外カメラ）
     async function initCamera() {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("お使いのブラウザはカメラ機能をサポートしていないか、HTTPS接続ではありません。");
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
           audio: false
@@ -135,9 +153,14 @@
         preview.srcObject = stream;
 
         let options = {};
-        if (MediaRecorder.isTypeSupported('video/mp4')) {
-          options = { mimeType: 'video/mp4' };
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+          if (MediaRecorder.isTypeSupported('video/mp4')) {
+            options = { mimeType: 'video/mp4' };
+          } else if (MediaRecorder.isTypeSupported('video/webm')) {
+            options = { mimeType: 'video/webm' };
+          }
         }
+
         mediaRecorder = new MediaRecorder(stream, options);
 
         mediaRecorder.ondataavailable = (event) => {
@@ -149,17 +172,16 @@
           loading.style.display = 'block';
           resultSection.style.display = 'none';
 
-          // 録画中に保存したキーフレーム（静止画）を使って解析
           const frameBase64 = capturedFrames[Math.floor(capturedFrames.length / 2)] || captureCurrentFrame();
           await analyzeImage(frameBase64);
         };
 
       } catch (err) {
-        alert('カメラの起動に失敗しました: ' + err.message);
+        alert('カメラ起動エラー: ' + err.message + '\n\nSafariのカメラアクセス許可を確認してください。');
       }
     }
 
-    // 現在の映像を静止画（Base64）として切り出す
+    // 静止画切り出し
     function captureCurrentFrame() {
       const context = captureCanvas.getContext('2d');
       captureCanvas.width = preview.videoWidth || 640;
@@ -168,30 +190,42 @@
       return captureCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     }
 
+    // 録画開始ボタン
     startBtn.onclick = () => {
-      recordedChunks = [];
-      capturedFrames = [];
-      mediaRecorder.start();
-      
-      // 録画中、定期的にフレームを保持（ベストフレーム抽出用）
-      captureInterval = setInterval(() => {
-        if (preview.readyState === 4) {
-          capturedFrames.push(captureCurrentFrame());
-        }
-      }, 1000);
+      if (!mediaRecorder) {
+        alert('カメラが正しく初期化されていません。ページを再読み込みしてください。');
+        return;
+      }
 
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      resultSection.style.display = 'none';
+      try {
+        recordedChunks = [];
+        capturedFrames = [];
+        mediaRecorder.start();
+
+        captureInterval = setInterval(() => {
+          if (preview.readyState === 4) {
+            capturedFrames.push(captureCurrentFrame());
+          }
+        }, 1000);
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        resultSection.style.display = 'none';
+      } catch (err) {
+        alert('録画開始エラー: ' + err.message);
+      }
     };
 
+    // 録画停止ボタン
     stopBtn.onclick = () => {
-      mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
       startBtn.disabled = false;
       stopBtn.disabled = true;
     };
 
-    // Gemini APIを使ったAI解析
+    // Gemini API解析
     async function analyzeImage(base64Image) {
       const apiKey = apiKeyInput.value.trim();
       
@@ -220,7 +254,6 @@
 ]`;
 
       try {
-        // 自動更新に対応した最新モデルエイリアスを指定
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -236,7 +269,6 @@
 
         const data = await response.json();
 
-        // APIからのエラーチェック
         if (data.error) {
           throw new Error(`APIエラー (${data.error.code}): ${data.error.message}`);
         }
@@ -246,8 +278,6 @@
         }
 
         const rawText = data.candidates[0].content.parts[0].text;
-        
-        // JSON部分のみ抽出
         const jsonMatch = rawText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error("JSONのパースに失敗しました");
         
@@ -255,21 +285,19 @@
         displayResults(candidates);
 
       } catch (err) {
-        alert('解析エラーが発生しました: ' + err.message + '\n\n※APIキーが正しいか、Google AI Studioで再確認してください。');
+        alert('解析エラーが発生しました: ' + err.message);
       } finally {
         loading.style.display = 'none';
       }
     }
 
-    // 解析結果とGoogle画像検索リンクの表示
+    // 解析結果の表示
     function displayResults(candidates) {
       candidatesContainer.innerHTML = '';
 
       candidates.forEach(item => {
         const card = document.createElement('div');
         card.className = 'candidate-card';
-
-        // Google画像検索用URL
         const googleSearchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.name)}`;
 
         card.innerHTML = `
