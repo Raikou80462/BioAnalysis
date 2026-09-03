@@ -15,9 +15,35 @@
     video, canvas { width: 100%; border-radius: 12px; background: #000; aspect-ratio: 3/4; object-fit: cover; }
     
     .btn-group { margin-bottom: 16px; }
-    button { font-size: 15px; font-weight: bold; padding: 12px 20px; border: none; border-radius: 25px; margin: 4px; cursor: pointer; transition: 0.2s; }
+    
+    /* ボタン共通スタイル */
+    button {
+      font-size: 15px;
+      font-weight: bold;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 25px;
+      margin: 4px;
+      cursor: pointer;
+      transition: transform 0.1s, filter 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     .btn-record { background: #ff3b30; color: white; }
     .btn-stop { background: #ff9500; color: white; }
+
+    /* 押している最中（:active）の色の変化と凹み効果 */
+    button:active:not(:disabled),
+    .search-btn:active {
+      transform: scale(0.94);
+      filter: brightness(0.75);
+    }
+
+    /* 無効化（disabled）時の見た目 */
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     
     /* APIキー設定 */
     .api-key-box { max-width: 400px; margin: 0 auto 16px; background: #1c1c1e; padding: 10px; border-radius: 8px; font-size: 12px; }
@@ -33,10 +59,21 @@
     .candidate-card { background: #1c1c1e; border-radius: 12px; padding: 14px; margin-bottom: 10px; border-left: 4px solid #34c759; }
     .candidate-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 4px; color: #34c759; }
     .candidate-desc { font-size: 0.85rem; color: #ccc; margin-bottom: 10px; line-height: 1.4; }
-    .search-btn { display: inline-block; background: #0a84ff; color: #fff; text-decoration: none; font-size: 13px; font-weight: bold; padding: 6px 12px; border-radius: 16px; }
+    .search-btn {
+      display: inline-block;
+      background: #0a84ff;
+      color: #fff;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 6px 12px;
+      border-radius: 16px;
+      transition: transform 0.1s, filter 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
   </style>
 </head>
-<body>
+<body ontouchstart="">
 
   <h2>🌿 生き物（動物・昆虫・植物）判別</h2>
 
@@ -92,12 +129,15 @@
     async function initCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } },
+          video: { facingMode: "environment" },
           audio: false
         });
         preview.srcObject = stream;
 
-        const options = { mimeType: 'video/mp4' };
+        let options = {};
+        if (MediaRecorder.isTypeSupported('video/mp4')) {
+          options = { mimeType: 'video/mp4' };
+        }
         mediaRecorder = new MediaRecorder(stream, options);
 
         mediaRecorder.ondataavailable = (event) => {
@@ -161,6 +201,12 @@
         return;
       }
 
+      if (!base64Image) {
+        alert('画像の切り出しに失敗しました。再度撮影してください。');
+        loading.style.display = 'none';
+        return;
+      }
+
       const prompt = `この画像に写っている動物、昆虫、または植物を判別してください。
 考えられる候補を可能性が高い順に最大3つまで挙げてください。
 返答は必ず以下のJSON形式のみで出力してください（他の解説文は含めないでください）。
@@ -188,6 +234,16 @@
         });
 
         const data = await response.json();
+
+        // APIからのエラーチェック
+        if (data.error) {
+          throw new Error(`APIエラー (${data.error.code}): ${data.error.message}`);
+        }
+
+        if (!data.candidates || data.candidates.length === 0) {
+          throw new Error("AIからの回答が得られませんでした（安全フィルターによるブロック等の可能性があります）。");
+        }
+
         const rawText = data.candidates[0].content.parts[0].text;
         
         // JSON部分のみ抽出
